@@ -135,7 +135,6 @@ pip install joblib toolz cython
 conda install -c conda-forge pyresample -y ### or if that fails: pip install pyresample
 pip install git+https://github.com/nicoleagila/PyHum.git --no-deps
 
-python -c"import PyHum;PyHum.dotest()" 
 source deactivate pyhum 
 ```
 
@@ -155,10 +154,9 @@ pip install git+https://github.com/nicoleagila/PyHum.git --no-deps
 pip install matplotlib --upgrade
 ```
 
-Then run the test, and finally deactivate the venv ::
+Finally deactivate the venv ::
 
 ```
-python -c"import PyHum;PyHum.dotest()" 
 deactivate pyhum
 ```
 
