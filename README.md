@@ -16,7 +16,7 @@ I will no longer respond to issues or emails concerning this project, but if you
 
 A Python framework for reading and processing data from a Humminbird low-cost sidescan sonar
 
-Project website [here](http://dbuscombe-usgs.github.io/PyHum/) for more details
+Project original website [here](http://dbuscombe-usgs.github.io/PyHum/) for more details
 
 PyHum is an open-source project dedicated to provide a generic Python framework 
 for reading and exporting data from Humminbird(R) instruments, carrying out rudimentary radiometric corrections to the data,
@@ -136,7 +136,8 @@ conda install scipy numpy scikit-image
 pip install simplekml sklearn pandas dask
 pip install joblib toolz cython
 conda install -c conda-forge pyresample -y ### or if that fails: pip install pyresample
-pip install git+https://github.com/dbuscombe-usgs/PyHum.git --no-deps
+pip install git+https://github.com/nicoleagila/PyHum.git --no-deps
+
 python -c"import PyHum;PyHum.dotest()" 
 source deactivate pyhum 
 ```
