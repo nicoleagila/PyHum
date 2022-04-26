@@ -42,8 +42,11 @@
 
 #python -c "import PyHum; PyHum.test.dotest()"
 
+from cgi import print_environ
 import PyHum
 import os
+import sys
+import getopt
 import shutil
 import errno
  
@@ -63,113 +66,50 @@ __all__ = [
 
 def dotest():
 
+   argv=sys.argv[1:]
+   options, args= getopt.getopt(argv, "c:n:")
+   files=options[0][1]
+
    # copy files over to somewhere read/writeable
    dircopy(PyHum.__path__[0], os.path.expanduser("~")+os.sep+'pyhum_test')
-   shutil.copy(PyHum.__path__[0]+os.sep+'test.DAT', os.path.expanduser("~")+os.sep+'pyhum_test'+os.sep+'test.DAT')
+   
+   shutil.copy(PyHum.__path__[0]+os.sep+'input'+os.sep+files+'.DAT', os.path.expanduser("~")+os.sep+'pyhum_test'+os.sep+'input'+os.sep+files+'.DAT')
 
    # general settings   
-   humfile = os.path.normpath(os.path.join(os.path.expanduser("~"),'pyhum_test','test.DAT'))
-   sonpath = os.path.normpath(os.path.join(os.path.expanduser("~"),'pyhum_test'))
+   humfile = os.path.normpath(os.path.join(os.path.expanduser("~"),'pyhum_test','input',files+'.DAT'))
+   input_dir = os.path.normpath(os.path.join(os.path.expanduser("~"),'pyhum_test','input',files))
+   output = os.path.normpath(os.path.join(os.path.expanduser("~"),'pyhum_test','output'))
 
-   doplot = 1 #yes
+   doplot = 0 #yes
 
    # reading specific settings
    cs2cs_args = "epsg:26949" #arizona central state plane
    bedpick = 1 # auto bed pick
    c = 1450 # speed of sound fresh water
    t = 0.108 # length of transducer
-   draft = 0.3 # draft in metres
-   flip_lr = 1 # flip port and starboard
-   model = 998 # humminbird model
+   draft = 0.1 # draft in metres
+   flip_lr = 0 # flip port and starboard
+   model = "helix" # humminbird model
    calc_bearing = 1 #1=yes
    filt_bearing = 1 #1=yes
    chunk = '1' ##'d100' # distance, 100m
    #chunk = 'p1000' # pings, 1000
    #chunk = 'h10' # heading deviation, 10 deg
-          
-   # correction specific settings
-   maxW = 1000 # rms output wattage
+
+   ## read data in SON files into PyHum memory mapped format (.dat)
+   PyHum.read(output,humfile, input_dir, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk)
+
+    # correction specific settings
+   maxW = 500 # rms output wattage
    dofilt = 0 # 1 = apply a phase preserving filter (WARNING!! takes a very long time for large scans)
-   correct_withwater = 0 # don't retain water column in radiometric correction (1 = retains water column for radiomatric corrections)
-   ph = 7.0 # acidity on the pH scale
-   temp = 10.0 # water temperature in degrees Celsius
+   correct_withwater = 1 # don't retain water column in radiometric correction (1 = retains water column for radiomatric corrections)
+   ph = 8.0 # acidity on the pH scale
+   temp = 30.0 # water temperature in degrees Celsius
    salinity = 0.0
    dconcfile = None
 
-   # for shadow removal
-   shadowmask = 0 # 0= automatic shadow removal, 1=manual
-   win = 31
-   dissim=3
-   correl=0.2
-   contrast=6
-   energy=0.15
-   mn=4
+   PyHum.correct(humfile, output, maxW, doplot, dofilt, correct_withwater, ph, temp, salinity, dconcfile)
 
-   # for texture calcs
-   shift = 50 ##10 # pixel shift
-   density =win/2 # win/2 
-   numclasses = 8 #4 # number of discrete classes for contouring and k-means
-   maxscale = 20 # Max scale as inverse fraction of data length (for wavelet analysis)
-   notes = 4 # Notes per octave (for wavelet analysis)
-
-   # for mapping
-   res = 0.05 #99 # grid resolution in metres
-   # if res==99, the program will automatically calc res from the spatial res of the scans
-   mode = 1 # gridding mode (simple nearest neighbour)
-   #mode = 2 # gridding mode (inverse distance weighted nearest neighbour)
-   #mode = 3 # gridding mode (gaussian weighted nearest neighbour)
-   use_uncorrected = 0
-
-   scalemax=40
-   nn = 64 #number of nearest neighbours for gridding (used if mode > 1)
-   ##influence = 1 #Radius of influence used in gridding. Cut off distance in meters 
-   numstdevs = 5 #Threshold number of standard deviations in sidescan intensity per grid cell up to which to accept 
-
-   # for downward-looking echosounder echogram (e1-e2) analysis
-   beam = 20.0
-   transfreq = 200.0 # frequency (kHz) of downward looking echosounder
-   integ = 5
-   numclusters = 3 # number of acoustic classes to group observations
-
-   ## read data in SON files into PyHum memory mapped format (.dat)
-   PyHum.read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk) #cog
-
-   ## correct scans and remove water column
-   PyHum.correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp, salinity, dconcfile)
-
-   ## remove acoustic shadows (caused by distal acoustic attenuation or sound hitting shallows or shoreline)
-   PyHum.rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contrast, energy, mn)
-
-   win = 10
-   PyHum.texture2(humfile, sonpath, win, doplot, numclasses)
-
-   ## grid and map the scans
-   PyHum.map(humfile, sonpath, cs2cs_args, res, mode, nn, numstdevs, use_uncorrected, scalemax) 
-
-   ## calculate and map the e1 and e2 acoustic coefficients from the downward-looking sonar
-   PyHum.e1e2(humfile, sonpath, cs2cs_args, ph, temp, salinity, beam, transfreq, integ, numclusters, doplot)
-   
-   res = 1 # grid resolution in metres
-   numstdevs = 5
-   
-   ## grid and map the texture lengthscale maps
-   #PyHum.map_texture(humfile, sonpath, cs2cs_args, res, mode, nn, numstdevs)
-
-   #res = 0
-   #nn = 5 # noise threshold in dB W
-   #noisefloor = 10 # noise threshold in dB W
-   #weight = 1 ##based on grazing angle and inverse distance weighting
-   
-   ## create mosaic out of all chunks with weighting according to distance from nadir, grazing angle, or both
-   #PyHum.mosaic(humfile, sonpath, cs2cs_args, res, nn, noisefloor, weight)
-
-   ##win = 200 #100 # pixel window 
-   ## Calculate texture lengthscale maps using the method of Buscombe et al. (2015)
-   ##PyHum.texture(humfile, sonpath, win, shift, doplot, density, numclasses, maxscale, notes)
-
-   ## Calculate texture lengthscale maps using the method of Buscombe et al. (2015)
-   ## implemented using the superpixel approach
-   ##PyHum.texture_slic(humfile, sonpath, doplot, numclasses, maxscale, notes)
 
 if __name__ == '__main__':
    dotest()

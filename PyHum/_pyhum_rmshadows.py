@@ -74,6 +74,8 @@ from scipy.ndimage import binary_dilation, binary_erosion, binary_fill_holes, gr
 #import stdev
 from skimage.feature import greycomatrix, greycoprops
 
+from PIL import Image
+
 #plotting
 import matplotlib.pyplot as plt
 #import matplotlib.colors as colors
@@ -200,12 +202,19 @@ def rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contras
 
     # load memory mapped scans
     shape_port = np.squeeze(meta['shape_port'])
+    shape_star = np.squeeze(meta['shape_star'])
+    dim = [shape_star[1],shape_port[1]]
+    shape_star=[shape_star[0],np.min(dim)]
+    
+    shape_port=shape_star
+    
     if shape_port!='':
        #port_fp = np.memmap(sonpath+base+'_data_port_la.dat', dtype='float32', mode='r', shape=tuple(shape_port))
        with open(os.path.normpath(os.path.join(sonpath,base+'_data_port_la.dat')), 'r') as ff:
           port_fp = np.memmap(ff, dtype='float32', mode='r', shape=tuple(shape_port))
 
     shape_star = np.squeeze(meta['shape_star'])
+    shape_star=shape_port
     if shape_star!='':
        #star_fp = np.memmap(sonpath+base+'_data_star_la.dat', dtype='float32', mode='r', shape=tuple(shape_star))
        with open(os.path.normpath(os.path.join(sonpath,base+'_data_star_la.dat')), 'r') as ff:
@@ -276,6 +285,9 @@ def rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contras
        #del fp
 
        Zt = np.squeeze(Zt)
+
+       im = Image.fromarray(Zt)
+       im.save(sonpath+os.sep+base+"data_star_lar.tiff", "TIFF")
              
        # create memory mapped file for Zs
        #fp = np.memmap(sonpath+base+'_data_star_lar.dat', dtype='float32', mode='w+', shape=np.shape(Zs))
@@ -343,6 +355,9 @@ def rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contras
           Zt.append(port_mg)
 
        Zt = np.squeeze(Zt)
+
+       im = Image.fromarray(Zt)
+       im.save(sonpath+os.sep+base+"data_port_lar.tiff", "TIFF")
        ## create memory mapped file for Z
        #fp = np.memmap(sonpath+base+'_data_port_la.dat', dtype='float32', mode='w+', shape=np.shape(Zt))
        #fp[:] = Zt[:]
@@ -524,6 +539,9 @@ def rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contras
        with open(os.path.normpath(os.path.join(sonpath,base+'_data_port_lar.dat')), 'w+') as ff:
           fp = np.memmap(ff, dtype='float32', mode='w+', shape=np.shape(Zp))
        fp[:] = Zp[:]
+
+       im = Image.fromarray(Zp)
+       im.save(sonpath+os.sep+base+"data_star_lar.tiff", "TIFF")
        del fp
        del Zp    
 
@@ -536,6 +554,9 @@ def rmshadows(humfile, sonpath, win, shadowmask, doplot, dissim, correl, contras
        with open(os.path.normpath(os.path.join(sonpath,base+'_data_star_lar.dat')), 'w+') as ff:
           fp = np.memmap(ff, dtype='float32', mode='w+', shape=np.shape(Zs))
        fp[:] = Zs[:]
+
+       im = Image.fromarray(Zs)
+       im.save(sonpath+os.sep+base+"data_port_lar.tiff", "TIFF")
        del fp
        del Zs
 

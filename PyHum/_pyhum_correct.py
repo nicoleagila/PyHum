@@ -56,6 +56,9 @@ from __future__ import print_function
 from __future__ import division
 from scipy.io import savemat, loadmat
 import os, time #, sys, getopt
+import csv
+
+
 try:
    from Tkinter import Tk
    from tkFileDialog import askopenfilename, askdirectory
@@ -73,8 +76,12 @@ from scipy.special import jv
 from scipy.ndimage.filters import median_filter
 from skimage.restoration import denoise_tv_chambolle
 
+from PIL import Image
+
 #plotting
-import matplotlib.pyplot as plt
+import matplotlib
+from matplotlib import pyplot as plt
+
 #import matplotlib.colors as colors
 
 # suppress divide and invalid warnings
@@ -90,7 +97,7 @@ warnings.filterwarnings("ignore")
 # ========================================================
 
 #################################################
-def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp, salinity, dconcfile):
+def correct(humfile, input_dir, maxW, doplot, dofilt, correct_withwater, ph, temp, salinity, dconcfile):
 
     '''
     Remove water column and carry out some rudimentary radiometric corrections, 
@@ -190,17 +197,17 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
       inputfile = askopenfilename(filetypes=[("DAT files","*.DAT")]) 
 
     # prompt user to supply directory if no input sonpath is given
-    if not sonpath:
+    if not input_dir:
       print('A *.SON directory is required!!!!!!')
       Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-      sonpath = askdirectory() 
+      input_dir = askdirectory() 
 
     # print given arguments to screen and convert data type where necessary
     if humfile:
       print('Input file is %s' % (humfile))
 
-    if sonpath:
-      print('Sonar file path is %s' % (sonpath))
+    if input_dir:
+      print('Sonar file path is %s' % (input_dir))
 
     if maxW:
       maxW = np.asarray(maxW,float)
@@ -253,8 +260,8 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
        start = time.clock()
 
     # if son path name supplied has no separator at end, put one on
-    if sonpath[-1]!=os.sep:
-       sonpath = sonpath + os.sep
+    if input_dir[-1]!=os.sep:
+       input_dir = input_dir + os.sep
 
     base = humfile.split('.DAT') # get base of file name for output
     base = base[0].split(os.sep)[-1]
@@ -263,15 +270,16 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     base = humutils.strip_base(base)   
 
     # add wattage to metadata dict 
-    meta = loadmat(os.path.normpath(os.path.join(sonpath,base+'meta.mat')))
+    meta = loadmat(os.path.normpath(os.path.join(input_dir,base+'meta.mat')))
 
     dep_m = meta['dep_m'][0]
     pix_m = meta['pix_m'][0]
 
     meta['maxW'] = maxW
-    savemat(os.path.normpath(os.path.join(sonpath,base+'meta.mat')), meta ,oned_as='row')
+    savemat(os.path.normpath(os.path.join(input_dir,base+'meta.mat')), meta ,oned_as='row')
 
     bed = np.squeeze(meta['bed'])
+
     ft = 1/(meta['pix_m'])
     dist_m = np.squeeze(meta['dist_m'])
 
@@ -286,21 +294,27 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
 
     # load memory mapped scans
     shape_port = np.squeeze(meta['shape_port'])
+    shape_star = np.squeeze(meta['shape_star'])
+    dim = [shape_star[1],shape_port[1]]
+    shape=[shape_star[0],np.min(dim)]
+    meta['shape_star']=shape
+    shape_star = meta['shape_star']    
+
     if shape_port!='':
        
-       if os.path.isfile(os.path.normpath(os.path.join(sonpath,base+'_data_port2.dat'))):
-          port_fp = io.get_mmap_data(sonpath, base, '_data_port2.dat', 'int16', tuple(shape_port))
+       if os.path.isfile(os.path.normpath(os.path.join(input_dir,base+'_data_port2.dat'))):
+          port_fp = io.get_mmap_data(input_dir, base, '_data_port2.dat', 'int16', tuple(shape_port))
 
        else:
-          port_fp = io.get_mmap_data(sonpath, base, '_data_port.dat', 'int16', tuple(shape_port))       
+          port_fp = io.get_mmap_data(input_dir, base, '_data_port.dat', 'int16', tuple(shape_port))       
 
-    shape_star = np.squeeze(meta['shape_star'])
+    
     if shape_star!='':
-       if os.path.isfile(os.path.normpath(os.path.join(sonpath,base+'_data_star2.dat'))):
-          star_fp = io.get_mmap_data(sonpath, base, '_data_star2.dat', 'int16', tuple(shape_star))       
+       if os.path.isfile(os.path.normpath(os.path.join(input_dir,base+'_data_star2.dat'))):
+          star_fp = io.get_mmap_data(input_dir, base, '_data_star2.dat', 'int16', tuple(shape_star))       
 
        else:
-          star_fp = io.get_mmap_data(sonpath, base, '_data_star.dat', 'int16', tuple(shape_star))        
+          star_fp = io.get_mmap_data(input_dir, base, '_data_star.dat', 'int16', tuple(shape_star))        
 
     if len(shape_star)==2:
        extent = shape_star[0] 
@@ -308,20 +322,28 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
        extent = shape_star[1] #np.shape(data_port)[0]
 
     bed = np.asarray(bed,'int')+int(0.25*ft)
+    
+    bed_output=input_dir+os.sep+base+"bed.csv"
+    with open(bed_output, 'w') as f:
+      writer = csv.writer(f)
+      writer.writerow(bed)
 
     # calculate in dB
     ######### star
     Zt, R, A = remove_water(star_fp, bed, shape_star, dep_m, pix_m, 1,  maxW)
-
     Zt = np.squeeze(Zt)
+    im = Image.fromarray(Zt)
+    im.save(input_dir+os.sep+base+"data_star_l.tiff", "TIFF")
     
-    # create memory mapped file for Z)
-    shape_star = io.set_mmap_data(sonpath, base, '_data_star_l.dat', 'float32', Zt)    
+    
+    # create memory mapped file for Zt
+    shape_star = io.set_mmap_data(input_dir, base, '_data_star_l.dat', 'float32', Zt)    
+    
     del Zt
     
     A = np.squeeze(A)
     # create memory mapped file for A
-    shape_A = io.set_mmap_data(sonpath, base, '_data_incidentangle.dat', 'float32', A)         
+    shape_A = io.set_mmap_data(input_dir, base, '_data_incidentangle.dat', 'float32', A)         
     del A
 
     R = np.squeeze(R)
@@ -337,27 +359,30 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     del alpha_w
 
     # create memory mapped file for R
-    shape_R = io.set_mmap_data(sonpath, base, '_data_range.dat', 'float32', R)  
+    shape_R = io.set_mmap_data(input_dir, base, '_data_range.dat', 'float32', R)  
     del R 
     
     TL[np.isnan(TL)] = 0
     TL[TL<0] = 0
-    shape_TL = io.set_mmap_data(sonpath, base, '_data_TL.dat', 'float32', TL)     
-    del TL      
+    shape_TL = io.set_mmap_data(input_dir, base, '_data_TL.dat', 'float32', TL)     
+    #del TL      
 
-    A_fp = io.get_mmap_data(sonpath, base, '_data_incidentangle.dat', 'float32', shape_star)
-    TL_fp = io.get_mmap_data(sonpath, base, '_data_TL.dat', 'float32', shape_star)
+    A_fp = io.get_mmap_data(input_dir, base, '_data_incidentangle.dat', 'float32', shape_star)
+    TL_fp = io.get_mmap_data(input_dir, base, '_data_TL.dat', 'float32', shape_star)
 
-    R_fp = io.get_mmap_data(sonpath, base, '_data_range.dat', 'float32', shape_star)
+    R_fp = io.get_mmap_data(input_dir, base, '_data_range.dat', 'float32', shape_star)
         
     if correct_withwater == 1:
        Zt = correct_scans(star_fp, A_fp, TL_fp, dofilt)
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_star_lw.tiff", "TIFF")
 
        # create memory mapped file for Z)
-       shape_star = io.set_mmap_data(sonpath, base, '_data_star_lw.dat', 'float32', Zt)       
+       shape_star = io.set_mmap_data(input_dir, base, '_data_star_lw.dat', 'float32', Zt)    
+       
 
     #we are only going to access the portion of memory required
-    star_fp = io.get_mmap_data(sonpath, base, '_data_star_l.dat', 'float32', shape_star)     
+    star_fp = io.get_mmap_data(input_dir, base, '_data_star_l.dat', 'float32', shape_star)     
 
     ##Zt = correct_scans(star_fp, A_fp, TL_fp, dofilt)
  
@@ -381,6 +406,9 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     except:
        pass
 
+    im = Image.fromarray(Zt2)
+    im.save(input_dir+os.sep+base+"data_star_la.tiff", "TIFF")
+
     ##Zt2 = np.empty(np.shape(Zt)) 
     ##for kk in range(np.shape(Zt)[1]):
     ##   Zt2[:,kk] = (Zt[:,kk] - avg) + np.nanmean(avg)
@@ -389,28 +417,32 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     del Zt
     
     # create memory mapped file for Z
-    shape_star = io.set_mmap_data(sonpath, base, '_data_star_la.dat', 'float32', Zt2)
+    shape_star = io.set_mmap_data(input_dir, base, '_data_star_la.dat', 'float32', Zt2)
     del Zt2    
     
     #we are only going to access the portion of memory required
-    star_fp = io.get_mmap_data(sonpath, base, '_data_star_la.dat', 'float32', shape_star) 
+    star_fp = io.get_mmap_data(input_dir, base, '_data_star_la.dat', 'float32', shape_star) 
 
     ######### port
     if correct_withwater == 1:
        Zt = correct_scans(port_fp, A_fp, TL, dofilt)
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_port_lw.tiff", "TIFF")
 
        # create memory mapped file for Z)
-       shape_port = io.set_mmap_data(sonpath, base, '_data_port_lw.dat', 'float32', Zt)        
+       shape_port = io.set_mmap_data(input_dir, base, '_data_port_lw.dat', 'float32', Zt)        
 
     Zt = remove_water(port_fp, bed, shape_port, dep_m, pix_m, 0,  maxW)
-
     Zt = np.squeeze(Zt)
+
+    im = Image.fromarray(Zt)
+    im.save(input_dir+os.sep+base+"data_port_l.tiff", "TIFF")
     
     # create memory mapped file for Z
-    shape_port = io.set_mmap_data(sonpath, base, '_data_port_l.dat', 'float32', Zt)       
+    shape_port = io.set_mmap_data(input_dir, base, '_data_port_l.dat', 'float32', Zt)       
 
     #we are only going to access the portion of memory required
-    port_fp = io.get_mmap_data(sonpath, base, '_data_port_l.dat', 'float32', shape_port)     
+    port_fp = io.get_mmap_data(input_dir, base, '_data_port_l.dat', 'float32', shape_port)     
     
     ##Zt = correct_scans(port_fp, A_fp, TL_fp, dofilt)
     
@@ -421,6 +453,9 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     
     Zt2 = Zt-avg + np.nanmean(avg)
     Zt2 = Zt2 + np.abs(np.nanmin(Zt2))
+    
+    im = Image.fromarray(Zt)
+    im.save(input_dir+os.sep+base+"data_port_la.tiff", "TIFF")
 
     ##Zt2 = np.empty(np.shape(Zt))
     ##for kk in range(np.shape(Zt)[1]):
@@ -430,49 +465,50 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
     del Zt
         
     # create memory mapped file for Z
-    shape_port = io.set_mmap_data(sonpath, base, '_data_port_la.dat', 'float32', Zt2)       
+    shape_port = io.set_mmap_data(input_dir, base, '_data_port_la.dat', 'float32', Zt2)       
     del Zt2
 
     #we are only going to access the portion of memory required
-    port_fp = io.get_mmap_data(sonpath, base, '_data_port_la.dat', 'float32', shape_port) 
+    port_fp = io.get_mmap_data(input_dir, base, '_data_port_la.dat', 'float32', shape_port) 
 
     ## do plots of merged scans
     if doplot==1:
        if correct_withwater == 1:
 
-          port_fpw = io.get_mmap_data(sonpath, base, '_data_port_lw.dat', 'float32', shape_port) 
+          port_fpw = io.get_mmap_data(input_dir, base, '_data_port_lw.dat', 'float32', shape_port) 
 
-          star_fpw = io.get_mmap_data(sonpath, base, '_data_star_lw.dat', 'float32', shape_star) 
+          star_fpw = io.get_mmap_data(input_dir, base, '_data_star_lw.dat', 'float32', shape_star) 
           
           if len(np.shape(star_fpw))>2:
              for p in range(len(star_fpw)):
-                plot_merged_scans(port_fpw[p], star_fpw[p], dist_m, shape_port, ft, sonpath, p)
+                plot_merged_scans(port_fpw[p], star_fpw[p], dist_m, shape_port, ft, input_dir, p)
           else:
-             plot_merged_scans(port_fpw, star_fpw, dist_m, shape_port, ft, sonpath, 0)
+             plot_merged_scans(port_fpw, star_fpw, dist_m, shape_port, ft, input_dir, 0)
 
        else:
 
           if len(np.shape(star_fp))>2:
              for p in range(len(star_fp)):
-                plot_merged_scans(port_fp[p], star_fp[p], dist_m, shape_port, ft, sonpath, p)
+                plot_merged_scans(port_fp[p], star_fp[p], dist_m, shape_port, ft, input_dir, p)
           else:
-             plot_merged_scans(port_fp, star_fp, dist_m, shape_port, ft, sonpath, 0)
+             plot_merged_scans(port_fp, star_fp, dist_m, shape_port, ft, input_dir, 0)
 
 
     # load memory mapped scans
+    meta['shape_hi']=shape
     shape_low = np.squeeze(meta['shape_low'])
     shape_hi = np.squeeze(meta['shape_hi'])
     
     if shape_low!='':
-       if os.path.isfile(os.path.normpath(os.path.join(sonpath,base+'_data_dwnlow2.dat'))):
+       if os.path.isfile(os.path.normpath(os.path.join(input_dir,base+'_data_dwnlow2.dat'))):
           try:
-             low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow2.dat', 'int16', tuple(shape_low))           
+             low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow2.dat', 'int16', tuple(shape_low))           
 
           except:
-             low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', tuple(shape_low)) 
+             low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow.dat', 'int16', tuple(shape_low)) 
 
           finally:
-             low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', tuple(shape_hi))              
+             low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow.dat', 'int16', tuple(shape_hi))              
 
              #if 'shape_hi' in locals():
              #   low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow2.dat', 'int16', tuple(shape_hi))              
@@ -480,24 +516,24 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
        else:
 
           try:
-             low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', tuple(shape_low))           
+             low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow.dat', 'int16', tuple(shape_low))           
 
           except:
              if 'shape_hi' in locals():
-                low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', tuple(shape_hi))              
+                low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow.dat', 'int16', tuple(shape_hi))              
 
     shape_hi = np.squeeze(meta['shape_hi'])
 
     if shape_hi!='':
-       if os.path.isfile(os.path.normpath(os.path.join(sonpath,base+'_data_dwnhi2.dat'))):
+       if os.path.isfile(os.path.normpath(os.path.join(input_dir,base+'_data_dwnhi2.dat'))):
           try:
-             hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi2.dat', 'int16', tuple(shape_hi))           
+             hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi2.dat', 'int16', tuple(shape_hi))           
 
           except:
-             hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', tuple(shape_hi)) 
+             hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi.dat', 'int16', tuple(shape_hi)) 
 
           finally:
-             hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', tuple(shape_low))              
+             hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi.dat', 'int16', tuple(shape_low))              
 
 
              #if 'shape_low' in locals():
@@ -505,11 +541,11 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
 
        else:
           try:
-             hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', tuple(shape_hi))            
+             hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi.dat', 'int16', tuple(shape_hi))            
 
           except:
              if 'shape_low' in locals():
-                hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', tuple(shape_low))               
+                hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi.dat', 'int16', tuple(shape_low))               
 
 
     if 'low_fp' in locals():
@@ -517,55 +553,66 @@ def correct(humfile, sonpath, maxW, doplot, dofilt, correct_withwater, ph, temp,
        Zt = remove_water(low_fp, bed, shape_low, dep_m, pix_m, 0,  maxW)
        Zt = np.squeeze(Zt)
 
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_low_l.tiff", "TIFF")
+
        # create memory mapped file for Z
-       shape_low = io.set_mmap_data(sonpath, base, '_data_dwnlow_l.dat', 'float32', Zt)       
+       shape_low = io.set_mmap_data(input_dir, base, '_data_dwnlow_l.dat', 'float32', Zt)       
        del Zt   
 
        #we are only going to access the portion of memory required
-       low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow_l.dat', 'float32', shape_low)         
+       low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow_l.dat', 'float32', shape_low)         
        Zt = correct_scans2(low_fp, TL_fp)
 
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_low_la.tiff", "TIFF")
+
        # create memory mapped file for Z
-       shape_low = io.set_mmap_data(sonpath, base, '_data_dwnlow_la.dat', 'float32', Zt)    
+       shape_low = io.set_mmap_data(input_dir, base, '_data_dwnlow_la.dat', 'float32', Zt)    
        del Zt    
 
        #we are only going to access the lowion of memory required
-       low_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow_la.dat', 'float32', shape_low)        
+       low_fp = io.get_mmap_data(input_dir, base, '_data_dwnlow_la.dat', 'float32', shape_low)        
        
        if doplot==1:
           if len(np.shape(low_fp))>2:
              for p in range(len(low_fp)):
-                plot_dwnlow_scans(low_fp[p], dist_m, shape_low, ft, sonpath, p)
+                plot_dwnlow_scans(low_fp[p], dist_m, shape_low, ft, input_dir, p)
           else:
-             plot_dwnlow_scans(low_fp, dist_m, shape_low, ft, sonpath, 0)
+             plot_dwnlow_scans(low_fp, dist_m, shape_low, ft, input_dir, 0)
 
     if 'hi_fp' in locals():
        ######### hi
        Zt = remove_water(hi_fp, bed, shape_hi, dep_m, pix_m, 0,  maxW)
        Zt = np.squeeze(Zt)
 
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_high_l.tiff", "TIFF")
+
        # create memory mapped file for Z
-       shape_hi = io.set_mmap_data(sonpath, base, '_data_dwnhi_l.dat', 'float32', Zt) 
+       shape_hi = io.set_mmap_data(input_dir, base, '_data_dwnhi_l.dat', 'float32', Zt) 
        del Zt       
 
        #we are only going to access the portion of memory required
-       hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi_l.dat', 'float32', shape_hi)        
+       hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi_l.dat', 'float32', shape_hi)        
 
        Zt = correct_scans2(hi_fp, TL_fp)
+       im = Image.fromarray(Zt)
+       im.save(input_dir+os.sep+base+"data_high_la.tiff", "TIFF")
 
        # create memory mapped file for Z
-       shape_hi = io.set_mmap_data(sonpath, base, '_data_dwnhi_la.dat', 'float32', Zt)     
+       shape_hi = io.set_mmap_data(input_dir, base, '_data_dwnhi_la.dat', 'float32', Zt)     
        del Zt  
 
        #we are only going to access the hiion of memory required
-       hi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi_la.dat', 'float32', shape_hi)        
+       hi_fp = io.get_mmap_data(input_dir, base, '_data_dwnhi_la.dat', 'float32', shape_hi)        
        
        if doplot==1:
           if len(np.shape(hi_fp))>2:
              for p in range(len(hi_fp)):
-                plot_dwnhi_scans(hi_fp[p], dist_m, shape_hi, ft, sonpath, p)
+                plot_dwnhi_scans(hi_fp[p], dist_m, shape_hi, ft, input_dir, p)
           else:
-             plot_dwnhi_scans(hi_fp, dist_m, shape_hi, ft, sonpath, 0)
+             plot_dwnhi_scans(hi_fp, dist_m, shape_hi, ft, input_dir, 0)
 
     if os.name=='posix': # true if linux/mac
        elapsed = (time.time() - start)
@@ -658,6 +705,7 @@ def remove_water(fp,bed,shape, dep_m, pix_m, calcR,  maxW):
           if calcR ==1:
              extent = shape[1]
              yvec = np.linspace(pix_m,extent*pix_m,extent)
+
              d = dep_m[shape[-1]*p:shape[-1]*(p+1)]
 
              a = np.ones(np.shape(fp[p]))
@@ -698,16 +746,20 @@ def remove_water(fp,bed,shape, dep_m, pix_m, calcR,  maxW):
        if calcR ==1:
           extent = shape[0]
           yvec = np.linspace(pix_m,extent*pix_m,extent)
+
           d = dep_m
 
           a = np.ones(np.shape(fp))
 		  
           for k in range(len(d)): 
-             a[:,[k]] = np.expand_dims(d[k]/yvec, axis=1)
+             #a[:,[k]] = np.expand_dims(d[k]/yvec, axis=1)
+             a[:,[k]] = d[k]/yvec
 
           r = np.ones(np.shape(fp))
           for k in range(len(d)): 
-             r[:,[k]] = np.expand_dims(np.sqrt(yvec**2 - d[k]**2), axis=1)
+
+             #np.expand_dims(np.sqrt(yvec**2 - d[k]**2), axis=1)
+             r[:,[k]] = np.sqrt(yvec**2 - d[k]**2)
 
           # shift proportionally depending on where the bed is
           for k in range(np.shape(r)[1]):

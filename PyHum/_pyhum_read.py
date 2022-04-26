@@ -67,6 +67,11 @@ except:
 import csv
 import io #PyHum.io as io
 
+import libtiff
+from libtiff import TIFF
+
+from PIL import Image
+
 #numerical
 #import pyread
 import pyread_single #PyHum.pyread_single as pyread_single
@@ -94,7 +99,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 #################################################
-def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk): #cog = 1,
+def read(output,humfile, input_dir, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk): #cog = 1,
 
     '''
     Read a .DAT and associated set of .SON files recorded by a Humminbird(R)
@@ -215,17 +220,17 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
       humfile = askopenfilename(filetypes=[("DAT files","*.DAT")])
 
     # prompt user to supply directory if no input sonpath is given
-    if not sonpath:
+    if not input_dir:
       print('A *.SON directory is required!!!!!!')
       Tk().withdraw() # we don't want a full GUI, so keep the root window from appearing
-      sonpath = askdirectory()
+      input_dir = askdirectory()
 
     # print given arguments to screen and convert data type where necessary
     if humfile:
       print('Input file is %s' % (humfile))
 
-    if sonpath:
-      print('Son files are in %s' % (sonpath))
+    if input_dir:
+      print('Son files are in %s' % (input_dir))
 
     if cs2cs_args:
       print('cs2cs arguments are %s' % (cs2cs_args))
@@ -345,13 +350,13 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        start = time.clock()
 
     # if son path name supplied has no separator at end, put one on
-    if sonpath[-1]!=os.sep:
-       sonpath = sonpath + os.sep
+    if input_dir[-1]!=os.sep:
+       input_dir = input_dir + os.sep
 
     # get the SON files from this directory
-    sonfiles = glob.glob(sonpath+'*.SON')
+    sonfiles = glob.glob(input_dir+'*.SON')
     if not sonfiles:
-        sonfiles = glob.glob(os.getcwd()+os.sep+sonpath+'*.SON')
+        sonfiles = glob.glob(os.getcwd()+os.sep+input_dir+'*.SON')
 
     base = humfile.split('.DAT') # get base of file name for output
     base = base[0].split(os.sep)[-1]
@@ -390,30 +395,46 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
 
           elif Y[k] == 'down_vhighfreq': #hopefully this only applies to mega systems
              data_dwnhi = X[k].astype('int16')
-
+       
        del X, Y, A, B, o
        old_pyread = 0
 
        if 'data_port' not in locals():
           data_port = ''
           print("portside scan not available")
+       else:
+          arr = np.uint8(data_port)
+          im = Image.fromarray(arr)
+          im.save(output+os.sep+base+"_data_port.tiff", "TIFF")
 
        if 'data_star' not in locals():
           data_star = ''
           print("starboardside scan not available")
+       else:
+          arr = np.uint8(data_star)[:,:-1]
+          im = Image.fromarray(arr)
+          im.save(output+os.sep+base+"_data_star.tiff", "TIFF")
 
        if 'data_dwnhi' not in locals():
           data_dwnlow = ''
           print("high-frq. downward scan not available")
+       else:
+          arr = np.uint8(data_dwnhi)[:,:-1]
+          im = Image.fromarray(arr)
+          im.save(output+os.sep+base+"_data_sonarhigh.tiff", "TIFF")
 
        if 'data_dwnlow' not in locals():
           data_dwnlow = ''
-          print("low-frq. downward scan not available")
+          print("low-frq. sonar scan not available")
+       else:
+          arr = np.uint8(data_dwnlow)[:,:-1]
+          im = Image.fromarray(arr)
+          im.save(output+os.sep+base+"data_sonarlow.tiff", "TIFF")
 
-    except: # revert back to older version if paralleleised version fails
-
+    except Exception as e: # revert back to older version if paralleleised version fails
+       
        print("something went wrong with the parallelised version of pyread ...")
-
+       print(e)
        try:
           import pyread
        except:
@@ -487,10 +508,11 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        del data_port
 
        ## create memory mapped file for Z
-       shape_port = io.set_mmap_data(sonpath, base, '_data_port.dat', 'int16', Zt)
+       shape_port = io.set_mmap_data(output, base, '_data_port.dat', 'int16', Zt)
+       #que devuelve
 
        ##we are only going to access the portion of memory required
-       port_fp = io.get_mmap_data(sonpath, base, '_data_port.dat', 'int16', shape_port)
+       port_fp = io.get_mmap_data(output, base, '_data_port.dat', 'int16', shape_port)
 
     if old_pyread == 1: #older pyread version
        # starboard scan
@@ -509,52 +531,55 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        del data_star
 
        # create memory mapped file for Z
-       shape_star = io.set_mmap_data(sonpath, base, '_data_star.dat', 'int16', Zt)
+       shape_star = io.set_mmap_data(output, base, '_data_star.dat', 'int16', Zt)
 
-       star_fp = io.get_mmap_data(sonpath, base, '_data_star.dat', 'int16', shape_star)
+       star_fp = io.get_mmap_data(output, base, '_data_star.dat', 'int16', shape_star)
 
     if 'star_fp' in locals() and 'port_fp' in locals():
        # check that port and starboard are same size
        # and trim if not
+       print("star_fp no same shape port_fp")
+
        if np.shape(star_fp)!=np.shape(port_fp):
           print("port and starboard scans are different sizes ... rectifying")
-          if np.shape(port_fp[0])[1] > np.shape(star_fp[0])[1]:
+
+          """if np.shape(port_fp[0])[0] > np.shape(star_fp[0])[0]:
              tmp = port_fp.copy()
              tmp2 = np.empty_like(star_fp)
              for k in range(len(tmp)):
-                 tmp2[k] = tmp[k][:,:np.shape(star_fp[k])[1]]
+                 tmp2[k] = tmp[k][:,:np.shape(star_fp[k])[0]]
              del tmp
 
              # create memory mapped file for Z
-             shape_port = io.set_mmap_data(sonpath, base, '_data_port2.dat', 'int16', tmp2)
+             shape_port = io.set_mmap_data(output, base, '_data_port2.dat', 'int16', tmp2)
              #shape_star = shape_port.copy()
              shape_star = tuple(np.asarray(shape_port).copy())
 
              ##we are only going to access the portion of memory required
-             port_fp = io.get_mmap_data(sonpath, base, '_data_port2.dat', 'int16', shape_port)
+             port_fp = io.get_mmap_data(output, base, '_data_port2.dat', 'int16', shape_port)
 
              ind_port = list(ind_port)
-             ind_port[-1] = np.shape(star_fp[0])[1]
+             ind_port[-1] = np.shape(star_fp[0])[0]
              ind_port = tuple(ind_port)
 
-          elif np.shape(port_fp[0])[1] < np.shape(star_fp[0])[1]:
+          elif np.shape(port_fp[0])[0] < np.shape(star_fp[0])[0]:
              tmp = star_fp.copy()
              tmp2 = np.empty_like(port_fp)
              for k in range(len(tmp)):
-                 tmp2[k] = tmp[k][:,:np.shape(port_fp[k])[1]]
+                 tmp2[k] = tmp[k][:,:np.shape(port_fp[k])[0]]
              del tmp
 
              # create memory mapped file for Z
-             shape_port = io.set_mmap_data(sonpath, base, '_data_star2.dat', 'int16', tmp2)
+             shape_port = io.set_mmap_data(output, base, '_data_star2.dat', 'int16', tmp2)
              #shape_star = shape_port.copy()
              shape_star = tuple(np.asarray(shape_port).copy())
 
              #we are only going to access the portion of memory required
-             star_fp = io.get_mmap_data(sonpath, base, '_data_star2.dat', 'int16', shape_star)
+             star_fp = io.get_mmap_data(output, base, '_data_star2.dat', 'int16', shape_star)
 
              ind_star = list(ind_star)
-             ind_star[-1] = np.shape(port_fp[0])[1]
-             ind_star = tuple(ind_star)
+             ind_star[-1] = np.shape(port_fp[0])[0]
+             ind_star = tuple(ind_star)"""
 
     if old_pyread == 1: #older pyread version
        # low-freq. sonar
@@ -570,10 +595,10 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        del data_dwnlow
 
        # create memory mapped file for Z
-       shape_low = io.set_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', Zt)
+       shape_low = io.set_mmap_data(output, base, '_data_dwnlow.dat', 'int16', Zt)
 
        ##we are only going to access the portion of memory required
-       dwnlow_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow.dat', 'int16', shape_low)
+       dwnlow_fp = io.get_mmap_data(output, base, '_data_dwnlow.dat', 'int16', shape_low)
 
     if old_pyread == 1: #older pyread version
        # hi-freq. sonar
@@ -589,9 +614,9 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        del data_dwnhi
 
        # create memory mapped file for Z
-       shape_hi = io.set_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', Zt)
+       shape_hi = io.set_mmap_data(output, base, '_data_dwnhi.dat', 'int16', Zt)
 
-       dwnhi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi.dat', 'int16', shape_hi)
+       dwnhi_fp = io.get_mmap_data(output, base, '_data_dwnhi.dat', 'int16', shape_hi)
 
     if 'dwnhi_fp' in locals() and 'dwnlow_fp' in locals():
        # check that low and high are same size
@@ -606,12 +631,12 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
              del tmp
 
              # create memory mapped file for Z
-             shape_low = io.set_mmap_data(sonpath, base, '_data_dwnhi2.dat', 'int16', tmp2)
+             shape_low = io.set_mmap_data(output, base, '_data_dwnhi2.dat', 'int16', tmp2)
              #shape_hi = shape_low.copy()
              shape_hi = tuple(np.asarray(shape_low).copy())
 
              ##we are only going to access the portion of memory required
-             dwnhi_fp = io.get_mmap_data(sonpath, base, '_data_dwnhi2.dat', 'int16', shape_hi)
+             dwnhi_fp = io.get_mmap_data(output, base, '_data_dwnhi2.dat', 'int16', shape_hi)
 
              ind_hi = list(ind_hi)
              ind_hi[-1] = np.shape(dwnlow_fp[0])[1]
@@ -625,12 +650,12 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
              del tmp
 
              # create memory mapped file for Z
-             shape_low = io.set_mmap_data(sonpath, base, '_data_dwnlow2.dat', 'int16', tmp2)
+             shape_low = io.set_mmap_data(output, base, '_data_dwnlow2.dat', 'int16', tmp2)
              #shape_hi = shape_low.copy()
              shape_hi = tuple(np.asarray(shape_low).copy())
 
              ##we are only going to access the portion of memory required
-             dwnlow_fp = io.get_mmap_data(sonpath, base, '_data_dwnlow2.dat', 'int16', shape_low)
+             dwnlow_fp = io.get_mmap_data(output, base, '_data_dwnlow2.dat', 'int16', shape_low)
 
              ind_low = list(ind_low)
              ind_low[-1] = np.shape(dwnhi_fp[0])[1]
@@ -672,9 +697,10 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
        metadat['shape_low'] = shape_low
     else:
        metadat['shape_low'] = ''
-
+#HASTA AQUI
+   
     #make kml boat trackline
-    humutils.make_trackline(lon,lat, sonpath, base)
+    #humutils.make_trackline(lon,lat, sonar_data, base)
 
     if 'port_fp' in locals() and 'star_fp' in locals():
 
@@ -683,6 +709,7 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
           if bedpick == 1: # auto
 
              x, bed = humutils.auto_bedpick(ft, dep_m, chunkmode, port_fp, c)
+             print(bed)
 
              if len(dist_m)<len(bed):
                 dist_m = np.append(dist_m,dist_m[-1]*np.ones(len(bed)-len(dist_m)))
@@ -690,9 +717,9 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
              if doplot==1:
                 if chunkmode!=4:
                    for k in range(len(star_fp)):
-                      plot_2bedpicks(port_fp[k], star_fp[k], bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], x[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, sonpath, k, chunkmode)
+                      plot_2bedpicks(port_fp[k], star_fp[k], bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], x[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, output, k, chunkmode)
                 else:
-                   plot_2bedpicks(port_fp, star_fp, bed, dist_m, x, ft, shape_port, sonpath, 0, chunkmode)
+                   plot_2bedpicks(port_fp, star_fp, bed, dist_m, x, ft, shape_port, output, 0, chunkmode)
 
              # 'real' bed is estimated to be the minimum of the two
              bed = np.min(np.vstack((bed[:nrec],np.squeeze(x[:nrec]))),axis=0)
@@ -740,9 +767,9 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
              if doplot==1:
                 if chunkmode!=4:
                    for k in range(len(star_fp)):
-                      plot_2bedpicks(port_fp[k], star_fp[k], bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], x[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, sonpath, k, chunkmode)
+                      plot_2bedpicks(port_fp[k], star_fp[k], bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], x[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, input_dir, k, chunkmode)
                 else:
-                   plot_2bedpicks(port_fp, star_fp, bed, dist_m, x, ft, shape_port, sonpath, 0, chunkmode)
+                   plot_2bedpicks(port_fp, star_fp, bed, dist_m, x, ft, shape_port, output, 0, chunkmode)
 
           else: #manual
 
@@ -786,9 +813,9 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
           if doplot==1:
              if chunkmode!=4:
                 for k in range(len(star_fp)):
-                   plot_bedpick(port_fp[k], star_fp[k], (1/ft)*bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, sonpath, k, chunkmode)
+                   plot_bedpick(port_fp[k], star_fp[k], (1/ft)*bed[ind_port[-1]*k:ind_port[-1]*(k+1)], dist_m[ind_port[-1]*k:ind_port[-1]*(k+1)], ft, shape_port, output, k, chunkmode)
              else:
-                plot_bedpick(port_fp, star_fp, (1/ft)*bed, dist_m, ft, shape_port, sonpath, 0, chunkmode)
+                plot_bedpick(port_fp, star_fp, (1/ft)*bed, dist_m, ft, shape_port, output, 0, chunkmode)
 
           metadat['bed'] = bed[:nrec]
 
@@ -820,28 +847,29 @@ def read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, mo
     except:
        metadat['caltime'] = metadat['caltime']
 
-    savemat(os.path.normpath(os.path.join(sonpath,base+'meta.mat')), metadat ,oned_as='row')
+    savemat(os.path.normpath(os.path.join(output,base+'meta.mat')), metadat ,oned_as='row')
 
-    f = open(os.path.normpath(os.path.join(sonpath,base+'rawdat.csv')), 'wt')
+    f = open(os.path.normpath(os.path.join(output,base+'rawdat.csv')), 'wt')
     writer = csv.writer(f)
-    writer.writerow( ('longitude', 'latitude', 'easting', 'northing', 'depth (m)', 'distance (m)', 'instr. heading (deg)', 'heading (deg.)' ) )
+    writer.writerow( ('longitude', 'latitude', 'easting', 'northing', 'depth (m)', 'distance (m)', 'instr. heading (deg)', 'heading (deg.)',"time_s","caltime","spd" ) )
+    nrec=nrec-1 
     for i in range(0, nrec):
-       writer.writerow(( float(lon[i]),float(lat[i]),float(es[i]),float(ns[i]),float(dep_m[i]),float(dist_m[i]), float(metadat['instr_heading'][i]), float(metadat['heading'][i]) ))
+       writer.writerow(( float(lon[i]),float(lat[i]),float(es[i]),float(ns[i]),float(dep_m[i]),float(dist_m[i]), float(metadat['instr_heading'][i]), float(metadat['heading'][i]), float(metadat['time_s'][i]), float(metadat["caltime"][i]) ,float(metadat["spd"][i]) ))
     f.close()
 
     del lat, lon, dep_m #, dist_m
 
     if doplot==1:
 
-       plot_pos(sonpath, metadat, es, ns)
+       plot_pos(output, metadat, es, ns)
 
        if 'dwnlow_fp' in locals():
 
-          plot_dwnlow(dwnlow_fp, chunkmode, sonpath)
+          plot_dwnlow(dwnlow_fp, chunkmode, output)
 
        if 'dwnhi_fp' in locals():
 
-          plot_dwnhi(dwnhi_fp, chunkmode, sonpath)
+          plot_dwnhi(dwnhi_fp, chunkmode, output)
 
     if os.name=='posix': # true if linux/mac
        elapsed = (time.time() - start)
@@ -1011,6 +1039,7 @@ def makechunks_simple(dat, numchunks):
    # get windowed data
    try:
       return sliding_window(dat,(Ny,Nx/int(numchunks)))    #humutils.
+      #que obtiene
    except:
       print("memory-mapping failed in sliding window - trying memory intensive version")
       return humutils.sliding_window_nomm(dat,(Ny,Nx/int(numchunks)))
@@ -1133,6 +1162,7 @@ def sliding_window(a,ws,ss = None,flatten = True):
       dim = firstdim + (newshape[-meat:])
       # remove any dimensions with size 1
       dim = filter(lambda i : i != 1,dim)
+      #ver dimensiones
 
       return a.reshape(dim), newshape
 
@@ -1193,7 +1223,7 @@ def norm_shape(shap):
 # =========================================================
 if __name__ == '__main__':
 
-   read(humfile, sonpath, cs2cs_args, c, draft, doplot, t, f, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk) #cog
+   read(output,humfile, input_dir, cs2cs_args, c, draft, doplot, t, bedpick, flip_lr, model, calc_bearing, filt_bearing, chunk)
 
        #try:
        #except:
