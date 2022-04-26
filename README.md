@@ -7,16 +7,13 @@ I will no longer respond to issues or emails concerning this project, but if you
 
 **************************************************************************
 
-
-
-
 ## PyHum
 
 ![pyhum_logo_colour_sm](https://user-images.githubusercontent.com/3596509/35187745-ed45a05a-fde5-11e7-8f7e-5142b59dc772.png)
 
 A Python framework for reading and processing data from a Humminbird low-cost sidescan sonar
 
-Project website [here](http://dbuscombe-usgs.github.io/PyHum/) for more details
+Project original website [here](http://dbuscombe-usgs.github.io/PyHum/) for more details
 
 PyHum is an open-source project dedicated to provide a generic Python framework 
 for reading and exporting data from Humminbird(R) instruments, carrying out rudimentary radiometric corrections to the data,
@@ -136,8 +133,8 @@ conda install scipy numpy scikit-image
 pip install simplekml sklearn pandas dask
 pip install joblib toolz cython
 conda install -c conda-forge pyresample -y ### or if that fails: pip install pyresample
-pip install git+https://github.com/dbuscombe-usgs/PyHum.git --no-deps
-python -c"import PyHum;PyHum.dotest()" 
+pip install git+https://github.com/nicoleagila/PyHum.git --no-deps
+
 source deactivate pyhum 
 ```
 
@@ -153,14 +150,13 @@ pip install simplekml sklearn pandas dask
 pip install joblib toolz cython
 conda install -c conda-forge pyresample -y ### or if that fails: pip install pyresample==1.1.4
 conda install numpy==1.12.0
-pip install git+https://github.com/dbuscombe-usgs/PyHum.git --no-deps
+pip install git+https://github.com/nicoleagila/PyHum.git --no-deps
 pip install matplotlib --upgrade
 ```
 
-Then run the test, and finally deactivate the venv ::
+Finally deactivate the venv ::
 
 ```
-python -c"import PyHum;PyHum.dotest()" 
 deactivate pyhum
 ```
 
@@ -171,80 +167,6 @@ If you get gdal/osgeo/ogr/os errors, install GDAL (Windows only)::
 
 ```
 pip install GDAL‑2.2.3‑cp27‑cp27m‑win_amd64.whl
-```
-
-
-### Installing as a library accessible outside of virtual env
-
-Prerequisite
-```
-pip install Cython
-```
-
-1. From PyPI::
-
-```
-pip install PyHum
-```
-
-2. the latest 'bleeding edge' (pre-release) version directly from github::
-
-```
-pip install git+https://github.com/dbuscombe-usgs/PyHum.git
-```
-
-(Windows users) install git from here: https://git-scm.com/download/win
-
-
-3. from github repo clone::
-
-```
-git clone --depth 1 git@github.com:dbuscombe-usgs/PyHum.git
-cd PyHum
-python setup.py install
-```
-
-or a local installation:
-
-```
-python setup.py install --user
-```
-
-
-4. linux users, using a virtual environment:
-
-```
-virtualenv venv
-source venv/bin/activate
-pip install numpy
-pip install Cython
-pip install basemap --allow-external basemap --allow-unverified basemap
-pip install PyHum --no-deps
-python -c "import PyHum; PyHum.test.dotest()"
-deactivate (or source venv/bin/deactivate)
-```
-
-The results will live in "venv/lib/python2.7/site-packages/PyHum". Note for Fedora linux users: you need the geos-devel package for basemap, and the blas and libpack libraries for scipy
-
-
-### Running the test
-A test can be carried out by running the supplied script. From the command line (terminal)::
-
-```
-python -c"import PyHum;PyHum.dotest()" 
-```
-
-or (if python3 is your default python)::
-
-```
-python2 -c"import PyHum;PyHum.dotest()" 
-```
-
-### Using the GUI
-From the command line (terminal)::
-
-```
-python -c "import PyHum; PyHum.gui()"
 ```
 
 ## Using PyHum
